@@ -1,8 +1,14 @@
+import logging
 import socket
-import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, send_mail
+
+logger = logging.getLogger(__name__)
+_email_executor = ThreadPoolExecutor(
+    max_workers=max(1, int(getattr(settings, "EMAIL_ASYNC_MAX_WORKERS", 2)))
+)
 
 
 def ensure_email_configured():
@@ -10,6 +16,23 @@ def ensure_email_configured():
         raise RuntimeError(
             "Email service is not configured. Set EMAIL_HOST_USER and EMAIL_HOST_PASSWORD in the deployment environment."
         )
+
+
+def _queue_email_task(email_type, recipient, send_func, *args, **kwargs):
+    recipient = (recipient or "").strip()
+    if not recipient:
+        raise ValueError("Recipient email is required.")
+
+    ensure_email_configured()
+
+    def _send():
+        try:
+            send_func(*args, **kwargs)
+        except Exception:
+            logger.exception("Failed to send %s email to %s", email_type, recipient)
+
+    _email_executor.submit(_send)
+    return True
 
 
 def send_system_email(subject, message, recipient):
@@ -47,25 +70,28 @@ def send_system_html_email(subject, text_body, html_body, recipient):
 
 
 def send_system_email_async(subject, message, recipient):
-    """Send email in a background thread so the request is not blocked."""
-    def _send():
-        try:
-            send_system_email(subject, message, recipient)
-        except Exception as e:
-            print(f"[email_async] Failed to send email to {recipient}: {e}")
-
-    threading.Thread(target=_send, daemon=True).start()
+    """Queue plain-text email so the request can return immediately."""
+    return _queue_email_task(
+        "plain-text",
+        recipient,
+        send_system_email,
+        subject,
+        message,
+        recipient,
+    )
 
 
 def send_system_html_email_async(subject, text_body, html_body, recipient):
-    """Send HTML email in a background thread so the request is not blocked."""
-    def _send():
-        try:
-            send_system_html_email(subject, text_body, html_body, recipient)
-        except Exception as e:
-            print(f"[email_async] Failed to send HTML email to {recipient}: {e}")
-
-    threading.Thread(target=_send, daemon=True).start()
+    """Queue HTML email so the request can return immediately."""
+    return _queue_email_task(
+        "html",
+        recipient,
+        send_system_html_email,
+        subject,
+        text_body,
+        html_body,
+        recipient,
+    )
 
 
 def smtp_connection_diagnostics(timeout=10):

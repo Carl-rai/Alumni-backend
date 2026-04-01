@@ -1,5 +1,5 @@
 from django.conf import settings
-from backend.email_utils import send_system_html_email
+from backend.email_utils import send_system_html_email_async
 
 def send_registration_confirmation_email(registration):
     event = registration.event
@@ -121,7 +121,7 @@ Alumni Management Team
 """
 
     try:
-        send_system_html_email(
+        send_system_html_email_async(
             subject=subject,
             text_body=plain_message,
             html_body=html_message,

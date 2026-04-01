@@ -7,7 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 from django.core.cache import cache
 from django.db import models
-from backend.email_utils import send_system_email, send_system_email_async, smtp_connection_diagnostics
+from backend.email_utils import send_system_email_async, smtp_connection_diagnostics
 from .serializers import RegisterSerializer, StaffCreateSerializer
 from .models import CustomUser
 from alumnistudent.models import AlumniStudent
@@ -123,7 +123,7 @@ def create_staff_api(request):
         # Send email with password
         try:
             password = request.data.get('password')
-            send_system_email(
+            send_system_email_async(
                 subject='Staff Account Created - Alumni System',
                 message=f'Dear {user.first_name} {user.last_name},\n\nYour staff account has been created!\n\nEmail: {user.email}\nPassword: {password}\n\nPlease login and change your password immediately.\n\nBest regards,\nAlumni Management Team',
                 recipient=user.email,
@@ -255,7 +255,7 @@ def approve_user_api(request, user_id):
         
         # Send approval email
         try:
-            send_system_email(
+            send_system_email_async(
                 subject='Account Approved - Alumni System',
                 message=f'Dear {user.first_name} {user.last_name},\n\nYour alumni account has been approved! You can now login to the system.\n\nBest regards,\nAlumni Management Team',
                 recipient=user.email,
@@ -281,7 +281,7 @@ def reject_user_api(request, user_id):
         user.save()
 
         try:
-            send_system_email(
+            send_system_email_async(
                 subject='Account Rejected - Alumni System',
                 message=f'Dear {user.first_name} {user.last_name},\n\nWe regret to inform you that your alumni account registration has been rejected.\n\nReason: {reason}\n\nIf you have any questions, please contact the administrator through this email or on system customer service.\n\nBest regards,\nAlumni Management Team',
                 recipient=user.email,
@@ -326,7 +326,7 @@ def update_user_api(request, user_id):
         # Send email only if alumni_id was updated
         if old_alumni_id != user.alumni_id:
             try:
-                send_system_email(
+                send_system_email_async(
                     subject='Alumni ID Updated - Alumni System',
                     message=f'Dear {user.first_name} {user.last_name},\n\nYour Alumni ID has been updated by an administrator.\n\nOld Alumni ID: {old_alumni_id}\nNew Alumni ID: {user.alumni_id}\n\nIf you did not request this change, please contact the administrator immediately.\n\nBest regards,\nAlumni Management Team',
                     recipient=user.email,
@@ -542,7 +542,7 @@ def send_registration_otp_api(request):
     code = ''.join(random.choices(string.digits, k=6))
     cache.set(f"reg_otp_{email}", code, timeout=600)
     try:
-        send_system_email(
+        send_system_email_async(
             subject='Email Verification Code - SCSIT Alumni',
             message=f'Your email verification code is: {code}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.\n\nBest regards,\nSCSIT Alumni Management Team',
             recipient=email,
@@ -593,7 +593,7 @@ def forgot_password_api(request):
     cache.set(f"reset_code_{email}", code, timeout=600)
 
     try:
-        send_system_email(
+        send_system_email_async(
             subject='Password Reset Code - Alumni System',
             message=f'Dear {user.first_name},\n\nYour password reset code is: {code}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.\n\nBest regards,\nAlumni Management Team',
             recipient=email,

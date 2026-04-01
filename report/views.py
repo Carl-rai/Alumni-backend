@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
-from backend.email_utils import send_system_email
+from backend.email_utils import send_system_email_async
 from .models import Report
 from .serializers import ReportSerializer
 from django.contrib.auth import get_user_model
@@ -47,7 +47,7 @@ class ReportViewSet(viewsets.ModelViewSet):
         # If guest (no registered user), send email
         if not report.user:
             try:
-                send_system_email(
+                send_system_email_async(
                     subject='Reply to your report/inquiry - SCSIT Alumni',
                     message=f'Dear {report.name},\n\nThank you for reaching out to us. Here is our reply to your report/inquiry:\n\n"{reply_message}"\n\nIf you have further concerns, feel free to send us another message.\n\nBest regards,\nSCSIT Alumni Management Team',
                     recipient=report.email,
