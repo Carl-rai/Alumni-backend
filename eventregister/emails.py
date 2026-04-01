@@ -1,5 +1,5 @@
-from django.core.mail import EmailMultiAlternatives
 from django.conf import settings
+from backend.email_utils import send_system_html_email
 
 def send_registration_confirmation_email(registration):
     event = registration.event
@@ -121,14 +121,12 @@ Alumni Management Team
 """
 
     try:
-        email = EmailMultiAlternatives(
+        send_system_html_email(
             subject=subject,
-            body=plain_message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[user.email],
+            text_body=plain_message,
+            html_body=html_message,
+            recipient=user.email,
         )
-        email.attach_alternative(html_message, "text/html")
-        email.send(fail_silently=False)
         return True
     except Exception as e:
         print(f"Failed to send registration email: {e}")

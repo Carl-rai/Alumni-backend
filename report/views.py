@@ -3,8 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
-from django.core.mail import send_mail
-from django.conf import settings as django_settings
+from backend.email_utils import send_system_email
 from .models import Report
 from .serializers import ReportSerializer
 from django.contrib.auth import get_user_model
@@ -17,14 +16,17 @@ class ReportViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.AllowAny]
 
     def create(self, request, *args, **kwargs):
-        email = request.data.get('email', '')
+        email = request.data.get('email', '').strip().lower()
         user = None
         try:
-            user = User.objects.get(email=email)
+            user = User.objects.get(email__iexact=email)
         except User.DoesNotExist:
             pass
 
-        serializer = self.get_serializer(data=request.data)
+        payload = request.data.copy()
+        payload['email'] = email
+
+        serializer = self.get_serializer(data=payload)
         serializer.is_valid(raise_exception=True)
         serializer.save(user=user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -45,15 +47,16 @@ class ReportViewSet(viewsets.ModelViewSet):
         # If guest (no registered user), send email
         if not report.user:
             try:
-                send_mail(
+                send_system_email(
                     subject='Reply to your report/inquiry - SCSIT Alumni',
                     message=f'Dear {report.name},\n\nThank you for reaching out to us. Here is our reply to your report/inquiry:\n\n"{reply_message}"\n\nIf you have further concerns, feel free to send us another message.\n\nBest regards,\nSCSIT Alumni Management Team',
-                    from_email=django_settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[report.email],
-                    fail_silently=True,
+                    recipient=report.email,
                 )
             except Exception as e:
-                print(f"Email sending failed: {e}")
+                return Response(
+                    {'error': f'Reply was saved, but email sending failed: {str(e)}'},
+                    status=status.HTTP_200_OK
+                )
 
         return Response({'message': 'Reply sent successfully'}, status=status.HTTP_200_OK)
 
@@ -66,17 +69,17 @@ class ReportViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='by-email')
     def by_email(self, request):
-        email = request.query_params.get('email', '')
+        email = request.query_params.get('email', '').strip().lower()
         if not email:
             return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
-        reports = Report.objects.filter(email=email)
+        reports = Report.objects.filter(email__iexact=email)
         serializer = self.get_serializer(reports, many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'], url_path='unread-replies')
     def unread_replies(self, request):
-        email = request.query_params.get('email', '')
+        email = request.query_params.get('email', '').strip().lower()
         if not email:
             return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
-        count = Report.objects.filter(email=email, reply__isnull=False, is_read_by_user=False).count()
+        count = Report.objects.filter(email__iexact=email, reply__isnull=False, is_read_by_user=False).count()
         return Response({'unread_count': count})

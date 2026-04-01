@@ -65,7 +65,14 @@ class EventRegistrationViewSet(viewsets.ModelViewSet):
             event.capacity -= (1 + registration.guest_count)
             event.save(update_fields=['capacity'])
 
-        send_registration_confirmation_email(registration)
+        email_sent = send_registration_confirmation_email(registration)
+        if not email_sent:
+            return Response(
+                {
+                    'detail': 'Registration was saved, but the confirmation email could not be sent. Check email configuration on the server.'
+                },
+                status=status.HTTP_201_CREATED
+            )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def destroy(self, request, *args, **kwargs):
