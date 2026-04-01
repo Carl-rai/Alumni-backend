@@ -15,6 +15,25 @@ import random
 import string
 
 
+def _send_system_email(subject, message, recipient):
+    recipient = (recipient or "").strip()
+    if not recipient:
+        raise ValueError("Recipient email is required.")
+
+    if not settings.EMAIL_HOST_USER or not settings.EMAIL_HOST_PASSWORD:
+        raise RuntimeError(
+            "Email service is not configured. Set EMAIL_HOST_USER and EMAIL_HOST_PASSWORD in the deployment environment."
+        )
+
+    return send_mail(
+        subject=subject,
+        message=message,
+        from_email=settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER,
+        recipient_list=[recipient],
+        fail_silently=False,
+    )
+
+
 def _normalize_match_value(value):
     if value is None:
         return ""
@@ -123,15 +142,16 @@ def create_staff_api(request):
         # Send email with password
         try:
             password = request.data.get('password')
-            send_mail(
+            _send_system_email(
                 subject='Staff Account Created - Alumni System',
                 message=f'Dear {user.first_name} {user.last_name},\n\nYour staff account has been created!\n\nEmail: {user.email}\nPassword: {password}\n\nPlease login and change your password immediately.\n\nBest regards,\nAlumni Management Team',
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=True,
+                recipient=user.email,
             )
         except Exception as e:
-            print(f"Email sending failed: {e}")
+            return Response(
+                {"error": f"Staff account created, but email sending failed: {str(e)}"},
+                status=status.HTTP_201_CREATED,
+            )
         
         return Response({"message": "Staff account created successfully"}, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -254,15 +274,16 @@ def approve_user_api(request, user_id):
         
         # Send approval email
         try:
-            send_mail(
+            _send_system_email(
                 subject='Account Approved - Alumni System',
                 message=f'Dear {user.first_name} {user.last_name},\n\nYour alumni account has been approved! You can now login to the system.\n\nBest regards,\nAlumni Management Team',
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=True,
+                recipient=user.email,
             )
         except Exception as e:
-            print(f"Email sending failed: {e}")
+            return Response(
+                {"error": f"User approved, but email sending failed: {str(e)}"},
+                status=status.HTTP_200_OK,
+            )
         
         return Response({"message": "User approved successfully"}, status=status.HTTP_200_OK)
     except CustomUser.DoesNotExist:
@@ -279,15 +300,16 @@ def reject_user_api(request, user_id):
         user.save()
 
         try:
-            send_mail(
+            _send_system_email(
                 subject='Account Rejected - Alumni System',
                 message=f'Dear {user.first_name} {user.last_name},\n\nWe regret to inform you that your alumni account registration has been rejected.\n\nReason: {reason}\n\nIf you have any questions, please contact the administrator through this email or on system customer service.\n\nBest regards,\nAlumni Management Team',
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=True,
+                recipient=user.email,
             )
         except Exception as e:
-            print(f"Email sending failed: {e}")
+            return Response(
+                {"error": f"User rejected, but email sending failed: {str(e)}"},
+                status=status.HTTP_200_OK,
+            )
 
         return Response({"message": "User rejected successfully"}, status=status.HTTP_200_OK)
     except CustomUser.DoesNotExist:
@@ -323,15 +345,16 @@ def update_user_api(request, user_id):
         # Send email only if alumni_id was updated
         if old_alumni_id != user.alumni_id:
             try:
-                send_mail(
+                _send_system_email(
                     subject='Alumni ID Updated - Alumni System',
                     message=f'Dear {user.first_name} {user.last_name},\n\nYour Alumni ID has been updated by an administrator.\n\nOld Alumni ID: {old_alumni_id}\nNew Alumni ID: {user.alumni_id}\n\nIf you did not request this change, please contact the administrator immediately.\n\nBest regards,\nAlumni Management Team',
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[user.email],
-                    fail_silently=True,
+                    recipient=user.email,
                 )
             except Exception as e:
-                print(f"Email sending failed: {e}")
+                return Response(
+                    {"error": f"User updated, but email sending failed: {str(e)}"},
+                    status=status.HTTP_200_OK,
+                )
         
         return Response({"message": "User updated successfully"}, status=status.HTTP_200_OK)
     except CustomUser.DoesNotExist:
@@ -530,7 +553,7 @@ def toggle_privacy_api(request):
 @api_view(["POST"])
 def send_registration_otp_api(request):
     """Send OTP to verify email during registration"""
-    email = request.data.get("email", "").strip()
+    email = request.data.get("email", "").strip().lower()
     if not email:
         return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
     if CustomUser.objects.filter(email__iexact=email).exists():
@@ -538,12 +561,10 @@ def send_registration_otp_api(request):
     code = ''.join(random.choices(string.digits, k=6))
     cache.set(f"reg_otp_{email}", code, timeout=600)
     try:
-        send_mail(
+        _send_system_email(
             subject='Email Verification Code - SCSIT Alumni',
             message=f'Your email verification code is: {code}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.\n\nBest regards,\nSCSIT Alumni Management Team',
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
+            recipient=email,
         )
     except Exception as e:
         return Response({"error": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -553,7 +574,7 @@ def send_registration_otp_api(request):
 @api_view(["POST"])
 def verify_registration_otp_api(request):
     """Verify OTP for registration email"""
-    email = request.data.get("email", "").strip()
+    email = request.data.get("email", "").strip().lower()
     code = request.data.get("code", "").strip()
     if not email or not code:
         return Response({"error": "Email and code are required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -567,7 +588,7 @@ def verify_registration_otp_api(request):
 @api_view(["POST"])
 def check_email_api(request):
     """Check if email is already registered"""
-    email = request.data.get("email", "").strip()
+    email = request.data.get("email", "").strip().lower()
     if not email:
         return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
     exists = CustomUser.objects.filter(email__iexact=email).exists()
@@ -578,7 +599,7 @@ def check_email_api(request):
 
 @api_view(["POST"])
 def forgot_password_api(request):
-    email = request.data.get("email")
+    email = request.data.get("email", "").strip().lower()
     if not email:
         return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -591,12 +612,10 @@ def forgot_password_api(request):
     cache.set(f"reset_code_{email}", code, timeout=600)
 
     try:
-        send_mail(
+        _send_system_email(
             subject='Password Reset Code - Alumni System',
             message=f'Dear {user.first_name},\n\nYour password reset code is: {code}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.\n\nBest regards,\nAlumni Management Team',
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
+            recipient=email,
         )
     except Exception as e:
         return Response({"error": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -606,7 +625,7 @@ def forgot_password_api(request):
 
 @api_view(["POST"])
 def verify_code_api(request):
-    email = request.data.get("email")
+    email = request.data.get("email", "").strip().lower()
     code = request.data.get("code")
 
     if not email or not code:
@@ -621,7 +640,7 @@ def verify_code_api(request):
 
 @api_view(["POST"])
 def reset_password_api(request):
-    email = request.data.get("email")
+    email = request.data.get("email", "").strip().lower()
     code = request.data.get("code")
     new_password = request.data.get("new_password")
     confirm_password = request.data.get("confirm_password")
