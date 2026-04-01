@@ -7,7 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 from django.core.cache import cache
 from django.db import models
-from backend.email_utils import send_system_email, smtp_connection_diagnostics
+from backend.email_utils import send_system_email, send_system_email_async, smtp_connection_diagnostics
 from .serializers import RegisterSerializer, StaffCreateSerializer
 from .models import CustomUser
 from alumnistudent.models import AlumniStudent

@@ -1,4 +1,5 @@
 import socket
+import threading
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, send_mail
@@ -43,6 +44,28 @@ def send_system_html_email(subject, text_body, html_body, recipient):
     email.attach_alternative(html_body, "text/html")
     email.send(fail_silently=False)
     return True
+
+
+def send_system_email_async(subject, message, recipient):
+    """Send email in a background thread so the request is not blocked."""
+    def _send():
+        try:
+            send_system_email(subject, message, recipient)
+        except Exception as e:
+            print(f"[email_async] Failed to send email to {recipient}: {e}")
+
+    threading.Thread(target=_send, daemon=True).start()
+
+
+def send_system_html_email_async(subject, text_body, html_body, recipient):
+    """Send HTML email in a background thread so the request is not blocked."""
+    def _send():
+        try:
+            send_system_html_email(subject, text_body, html_body, recipient)
+        except Exception as e:
+            print(f"[email_async] Failed to send HTML email to {recipient}: {e}")
+
+    threading.Thread(target=_send, daemon=True).start()
 
 
 def smtp_connection_diagnostics(timeout=10):
