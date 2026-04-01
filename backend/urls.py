@@ -18,10 +18,16 @@ from django.contrib import admin
 from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import path, include
+from django.http import JsonResponse
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 
+def root_view(request):
+    return JsonResponse({"status": "ok", "service": "alumni-backend"})
+
+
 urlpatterns = [
+    path('', root_view, name='root'),
     path('admin/', admin.site.urls),
     path('api/', include('user.urls')),
     path('api/', include('addevent.urls')),
