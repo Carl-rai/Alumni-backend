@@ -7,7 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 from django.core.cache import cache
 from django.db import models
-from backend.email_utils import send_system_email
+from backend.email_utils import send_system_email, smtp_connection_diagnostics
 from .serializers import RegisterSerializer, StaffCreateSerializer
 from .models import CustomUser
 from alumnistudent.models import AlumniStudent
@@ -765,3 +765,10 @@ def directory_api(request):
         "location": user.location,
     } for user in users]
     return Response(data, status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+def email_debug_api(request):
+    diagnostics = smtp_connection_diagnostics()
+    status_code = status.HTTP_200_OK if diagnostics["connect_ok"] else status.HTTP_503_SERVICE_UNAVAILABLE
+    return Response(diagnostics, status=status_code)
