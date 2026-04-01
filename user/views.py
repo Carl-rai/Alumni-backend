@@ -769,6 +769,15 @@ def directory_api(request):
 
 @api_view(["GET"])
 def email_debug_api(request):
-    diagnostics = smtp_connection_diagnostics()
-    status_code = status.HTTP_200_OK if diagnostics["connect_ok"] else status.HTTP_503_SERVICE_UNAVAILABLE
+    try:
+        timeout = int(request.query_params.get("timeout", 10))
+    except (TypeError, ValueError):
+        return Response({"error": "timeout must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+
+    diagnostics = smtp_connection_diagnostics(timeout=timeout)
+    status_code = (
+        status.HTTP_200_OK
+        if diagnostics["connect_ok"] and diagnostics["auth_ok"]
+        else status.HTTP_503_SERVICE_UNAVAILABLE
+    )
     return Response(diagnostics, status=status_code)

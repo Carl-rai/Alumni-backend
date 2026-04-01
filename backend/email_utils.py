@@ -3,7 +3,7 @@ import socket
 from concurrent.futures import ThreadPoolExecutor
 
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives, send_mail
+from django.core.mail import EmailMultiAlternatives, get_connection, send_mail
 
 logger = logging.getLogger(__name__)
 _email_executor = ThreadPoolExecutor(
@@ -106,7 +106,10 @@ def smtp_connection_diagnostics(timeout=10):
         "has_host_user": bool((settings.EMAIL_HOST_USER or "").strip()),
         "has_host_password": bool((settings.EMAIL_HOST_PASSWORD or "").strip()),
         "default_from_email": bool((settings.DEFAULT_FROM_EMAIL or "").strip()),
+        "timeout": timeout,
         "connect_ok": False,
+        "auth_ok": False,
+        "error_stage": None,
         "error": None,
     }
 
@@ -118,6 +121,20 @@ def smtp_connection_diagnostics(timeout=10):
         with socket.create_connection((host, port), timeout=timeout):
             result["connect_ok"] = True
     except Exception as exc:
+        result["error_stage"] = "connect"
+        result["error"] = str(exc)
+        return result
+
+    try:
+        connection = get_connection(
+            fail_silently=False,
+            timeout=timeout,
+        )
+        connection.open()
+        result["auth_ok"] = True
+        connection.close()
+    except Exception as exc:
+        result["error_stage"] = "auth"
         result["error"] = str(exc)
 
     return result
