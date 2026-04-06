@@ -72,11 +72,32 @@ def send_system_html_email_async(subject, text_body, html_body, recipient):
 def smtp_connection_diagnostics(timeout=10):
     api_key = os.getenv("SENDGRID_API_KEY", "").strip()
     from_email = _get_from_email()
-    return {
+
+    result = {
         "provider": "sendgrid",
         "has_api_key": bool(api_key),
-        "from_email": bool(from_email),
+        "from_email": from_email,
         "connect_ok": bool(api_key),
         "auth_ok": bool(api_key),
         "error": None if api_key else "SENDGRID_API_KEY is not set.",
     }
+
+    if api_key and from_email:
+        try:
+            from sendgrid import SendGridAPIClient
+            from sendgrid.helpers.mail import Mail
+            mail = Mail(
+                from_email=from_email,
+                to_emails=from_email,
+                subject="Alumni System - Email Test",
+                plain_text_content="This is a test email from your Alumni System.",
+            )
+            sg = SendGridAPIClient(api_key)
+            response = sg.send(mail)
+            result["test_email_status"] = response.status_code
+        except Exception as e:
+            result["auth_ok"] = False
+            result["connect_ok"] = False
+            result["error"] = str(e)
+
+    return result
