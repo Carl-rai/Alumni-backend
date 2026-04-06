@@ -50,7 +50,7 @@ class JobPost(models.Model):
     contact_person = models.CharField(max_length=100, blank=True, null=True)
 
     # Image
-    image = models.ImageField(upload_to='jobs/', blank=True, null=True)
+    image = models.ImageField(upload_to='alumni/jobs/', blank=True, null=True)
 
     # Posting Details
     posted_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, related_name='job_posts')

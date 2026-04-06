@@ -66,7 +66,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     age = models.PositiveIntegerField()
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default="user")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
-    profile_image = models.ImageField(upload_to='profiles/', blank=True, null=True)
+    profile_image = models.ImageField(upload_to='alumni/profiles/', blank=True, null=True)
 
     # User (alumni) specific fields
     alumni_id = models.CharField(unique=True, max_length=30, null=True, blank=True)
