@@ -8,7 +8,7 @@ class Event(models.Model):
     end_time = models.TimeField()
     location = models.CharField(max_length=255)
     venue = models.CharField(max_length=255, blank=True, null=True)
-    image = models.FileField(upload_to='alumni/events/', blank=True, null=True)
+    image = models.FileField(upload_to='events/', blank=True, null=True)
     batch_category = models.CharField(max_length=100, blank=True, null=True)
     course_category = models.CharField(max_length=100, blank=True, null=True)
     capacity = models.PositiveIntegerField(blank=True, null=True)
