@@ -203,6 +203,9 @@ if use_cloudinary_storage:
         "API_KEY": cloud_api_key,
         "API_SECRET": cloud_api_secret,
         "SECURE": True,
+        # Keep uploaded media in the model-defined Cloudinary folders
+        # instead of prepending Django's /media/ URL path.
+        "PREFIX": "",
     }
 
 MEDIA_URL = '/media/'
