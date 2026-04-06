@@ -70,7 +70,9 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'cloudinary_storage',
     'django.contrib.staticfiles',
+    'cloudinary',
     'rest_framework',
     'rest_framework_simplejwt', 
     'corsheaders',
@@ -185,6 +187,19 @@ USE_I18N = True
 
 USE_TZ = True
 
+cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME") or os.getenv("CLOUDINARY_CLOU_NAME")
+cloud_api_key = os.getenv("CLOUDINARY_API_KEY")
+cloud_api_secret = os.getenv("CLOUDINARY_API_SECRET")
+use_cloudinary_storage = all([cloud_name, cloud_api_key, cloud_api_secret])
+
+if use_cloudinary_storage:
+    CLOUDINARY_STORAGE = {
+        "CLOUD_NAME": cloud_name,
+        "API_KEY": cloud_api_key,
+        "API_SECRET": cloud_api_secret,
+        "SECURE": True,
+    }
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 # Static files (CSS, JavaScript, Images)
@@ -192,7 +207,18 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STORAGES = {
+    "default": {
+        "BACKEND": (
+            "cloudinary_storage.storage.MediaCloudinaryStorage"
+            if use_cloudinary_storage
+            else "django.core.files.storage.FileSystemStorage"
+        ),
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 # Email Configuration
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
