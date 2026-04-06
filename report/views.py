@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
-from backend.email_utils import send_system_email_async
+from backend.email_utils import dispatch_email
 from .models import Report
 from .serializers import ReportSerializer
 from django.contrib.auth import get_user_model
@@ -44,21 +44,20 @@ class ReportViewSet(viewsets.ModelViewSet):
         report.is_read_by_user = False
         report.save()
 
+        email_result = None
+
         # If guest (no registered user), send email
         if not report.user:
-            try:
-                send_system_email_async(
-                    subject='Reply to your report/inquiry - SCSIT Alumni',
-                    message=f'Dear {report.name},\n\nThank you for reaching out to us. Here is our reply to your report/inquiry:\n\n"{reply_message}"\n\nIf you have further concerns, feel free to send us another message.\n\nBest regards,\nSCSIT Alumni Management Team',
-                    recipient=report.email,
-                )
-            except Exception as e:
-                return Response(
-                    {'error': f'Reply was saved, but email sending failed: {str(e)}'},
-                    status=status.HTTP_200_OK
-                )
+            email_result = dispatch_email(
+                subject='Reply to your report/inquiry - SCSIT Alumni',
+                text_body=f'Dear {report.name},\n\nThank you for reaching out to us. Here is our reply to your report/inquiry:\n\n"{reply_message}"\n\nIf you have further concerns, feel free to send us another message.\n\nBest regards,\nSCSIT Alumni Management Team',
+                recipient=report.email,
+            )
 
-        return Response({'message': 'Reply sent successfully'}, status=status.HTTP_200_OK)
+        response_data = {'message': 'Reply sent successfully'}
+        if email_result:
+            response_data.update(email_result)
+        return Response(response_data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'], url_path='mark-read')
     def mark_read(self, request, pk=None):

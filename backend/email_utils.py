@@ -16,6 +16,64 @@ def _get_from_email():
     return os.getenv("DEFAULT_FROM_EMAIL", "").strip()
 
 
+def get_email_delivery_mode():
+    mode = os.getenv("EMAIL_DELIVERY_MODE", "backend").strip().lower()
+    return mode or "backend"
+
+
+def build_email_payload(subject, recipient, text_body=None, html_body=None):
+    recipient = (recipient or "").strip()
+    if not recipient:
+        raise ValueError("Recipient email is required.")
+
+    payload = {
+        "to": recipient,
+        "subject": subject,
+    }
+    if text_body:
+        payload["text"] = text_body
+    if html_body:
+        payload["html"] = html_body
+    return payload
+
+
+def dispatch_email(subject, recipient, text_body=None, html_body=None):
+    payload = build_email_payload(
+        subject=subject,
+        recipient=recipient,
+        text_body=text_body,
+        html_body=html_body,
+    )
+    delivery_mode = get_email_delivery_mode()
+
+    if delivery_mode == "frontend":
+        return {
+            "email_delivery_mode": delivery_mode,
+            "email_payload": payload,
+            "email_sent_by_backend": False,
+        }
+
+    if html_body:
+        send_system_html_email_async(
+            subject=subject,
+            text_body=text_body or "",
+            html_body=html_body,
+            recipient=recipient,
+        )
+    else:
+        send_system_email_async(
+            subject=subject,
+            message=text_body or "",
+            recipient=recipient,
+        )
+
+    return {
+        "email_delivery_mode": delivery_mode,
+        "email_payload": payload,
+        "email_sent_by_backend": True,
+    }
+
+
 def send_system_email(subject, message, recipient):
     from sendgrid import SendGridAPIClient
     from sendgrid.helpers.mail import Mail

@@ -1,7 +1,8 @@
 from django.conf import settings
-from backend.email_utils import send_system_html_email_async
+from backend.email_utils import dispatch_email
 
-def send_registration_confirmation_email(registration):
+
+def build_registration_confirmation_email(registration):
     event = registration.event
     user = registration.user
 
@@ -120,14 +121,14 @@ Alumni Management Team
 </html>
 """
 
-    try:
-        send_system_html_email_async(
-            subject=subject,
-            text_body=plain_message,
-            html_body=html_message,
-            recipient=user.email,
-        )
-        return True
-    except Exception as e:
-        print(f"Failed to send registration email: {e}")
-        return False
+    return {
+        "subject": subject,
+        "text_body": plain_message,
+        "html_body": html_message,
+        "recipient": user.email,
+    }
+
+
+def send_registration_confirmation_email(registration):
+    email_data = build_registration_confirmation_email(registration)
+    return dispatch_email(**email_data)

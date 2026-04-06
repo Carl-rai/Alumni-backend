@@ -7,7 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 from django.core.cache import cache
 from django.db import models
-from backend.email_utils import send_system_email_async, smtp_connection_diagnostics
+from backend.email_utils import dispatch_email, smtp_connection_diagnostics
 from .serializers import RegisterSerializer, StaffCreateSerializer
 from .models import CustomUser
 from alumnistudent.models import AlumniStudent
@@ -62,6 +62,14 @@ def _resolve_login_email(login_value):
         return alumni_user.email
 
     return login_value
+
+
+def _build_response(message, email_result=None, **extra):
+    data = {"message": message}
+    if email_result:
+        data.update(email_result)
+    data.update(extra)
+    return data
 
 
 @api_view(["POST"])
@@ -119,22 +127,18 @@ def create_staff_api(request):
     serializer = StaffCreateSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
-        
-        # Send email with password
-        try:
-            password = request.data.get('password')
-            send_system_email_async(
-                subject='Staff Account Created - Alumni System',
-                message=f'Dear {user.first_name} {user.last_name},\n\nYour staff account has been created!\n\nEmail: {user.email}\nPassword: {password}\n\nPlease login and change your password immediately.\n\nBest regards,\nAlumni Management Team',
-                recipient=user.email,
-            )
-        except Exception as e:
-            return Response(
-                {"error": f"Staff account created, but email sending failed: {str(e)}"},
-                status=status.HTTP_201_CREATED,
-            )
-        
-        return Response({"message": "Staff account created successfully"}, status=status.HTTP_201_CREATED)
+
+        password = request.data.get('password')
+        email_result = dispatch_email(
+            subject='Staff Account Created - Alumni System',
+            text_body=f'Dear {user.first_name} {user.last_name},\n\nYour staff account has been created!\n\nEmail: {user.email}\nPassword: {password}\n\nPlease login and change your password immediately.\n\nBest regards,\nAlumni Management Team',
+            recipient=user.email,
+        )
+
+        return Response(
+            _build_response("Staff account created successfully", email_result=email_result),
+            status=status.HTTP_201_CREATED,
+        )
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -252,21 +256,17 @@ def approve_user_api(request, user_id):
 
         user.status = "approved"
         user.save()
-        
-        # Send approval email
-        try:
-            send_system_email_async(
-                subject='Account Approved - Alumni System',
-                message=f'Dear {user.first_name} {user.last_name},\n\nYour alumni account has been approved! You can now login to the system.\n\nBest regards,\nAlumni Management Team',
-                recipient=user.email,
-            )
-        except Exception as e:
-            return Response(
-                {"error": f"User approved, but email sending failed: {str(e)}"},
-                status=status.HTTP_200_OK,
-            )
-        
-        return Response({"message": "User approved successfully"}, status=status.HTTP_200_OK)
+
+        email_result = dispatch_email(
+            subject='Account Approved - Alumni System',
+            text_body=f'Dear {user.first_name} {user.last_name},\n\nYour alumni account has been approved! You can now login to the system.\n\nBest regards,\nAlumni Management Team',
+            recipient=user.email,
+        )
+
+        return Response(
+            _build_response("User approved successfully", email_result=email_result),
+            status=status.HTTP_200_OK,
+        )
     except CustomUser.DoesNotExist:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -280,19 +280,16 @@ def reject_user_api(request, user_id):
         user.status = "rejected"
         user.save()
 
-        try:
-            send_system_email_async(
-                subject='Account Rejected - Alumni System',
-                message=f'Dear {user.first_name} {user.last_name},\n\nWe regret to inform you that your alumni account registration has been rejected.\n\nReason: {reason}\n\nIf you have any questions, please contact the administrator through this email or on system customer service.\n\nBest regards,\nAlumni Management Team',
-                recipient=user.email,
-            )
-        except Exception as e:
-            return Response(
-                {"error": f"User rejected, but email sending failed: {str(e)}"},
-                status=status.HTTP_200_OK,
-            )
+        email_result = dispatch_email(
+            subject='Account Rejected - Alumni System',
+            text_body=f'Dear {user.first_name} {user.last_name},\n\nWe regret to inform you that your alumni account registration has been rejected.\n\nReason: {reason}\n\nIf you have any questions, please contact the administrator through this email or on system customer service.\n\nBest regards,\nAlumni Management Team',
+            recipient=user.email,
+        )
 
-        return Response({"message": "User rejected successfully"}, status=status.HTTP_200_OK)
+        return Response(
+            _build_response("User rejected successfully", email_result=email_result),
+            status=status.HTTP_200_OK,
+        )
     except CustomUser.DoesNotExist:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -322,22 +319,19 @@ def update_user_api(request, user_id):
         user.course = request.data.get('course', user.course)
         user.year_graduate = request.data.get('year_graduate', user.year_graduate)
         user.save()
-        
-        # Send email only if alumni_id was updated
+
+        email_result = None
         if old_alumni_id != user.alumni_id:
-            try:
-                send_system_email_async(
-                    subject='Alumni ID Updated - Alumni System',
-                    message=f'Dear {user.first_name} {user.last_name},\n\nYour Alumni ID has been updated by an administrator.\n\nOld Alumni ID: {old_alumni_id}\nNew Alumni ID: {user.alumni_id}\n\nIf you did not request this change, please contact the administrator immediately.\n\nBest regards,\nAlumni Management Team',
-                    recipient=user.email,
-                )
-            except Exception as e:
-                return Response(
-                    {"error": f"User updated, but email sending failed: {str(e)}"},
-                    status=status.HTTP_200_OK,
-                )
-        
-        return Response({"message": "User updated successfully"}, status=status.HTTP_200_OK)
+            email_result = dispatch_email(
+                subject='Alumni ID Updated - Alumni System',
+                text_body=f'Dear {user.first_name} {user.last_name},\n\nYour Alumni ID has been updated by an administrator.\n\nOld Alumni ID: {old_alumni_id}\nNew Alumni ID: {user.alumni_id}\n\nIf you did not request this change, please contact the administrator immediately.\n\nBest regards,\nAlumni Management Team',
+                recipient=user.email,
+            )
+
+        return Response(
+            _build_response("User updated successfully", email_result=email_result),
+            status=status.HTTP_200_OK,
+        )
     except CustomUser.DoesNotExist:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -541,15 +535,15 @@ def send_registration_otp_api(request):
         return Response({"error": "This email is already registered."}, status=status.HTTP_409_CONFLICT)
     code = ''.join(random.choices(string.digits, k=6))
     cache.set(f"reg_otp_{email}", code, timeout=600)
-    try:
-        send_system_email_async(
-            subject='Email Verification Code - SCSIT Alumni',
-            message=f'Your email verification code is: {code}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.\n\nBest regards,\nSCSIT Alumni Management Team',
-            recipient=email,
-        )
-    except Exception as e:
-        return Response({"error": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    return Response({"message": "Verification code sent"}, status=status.HTTP_200_OK)
+    email_result = dispatch_email(
+        subject='Email Verification Code - SCSIT Alumni',
+        text_body=f'Your email verification code is: {code}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.\n\nBest regards,\nSCSIT Alumni Management Team',
+        recipient=email,
+    )
+    return Response(
+        _build_response("Verification code sent", email_result=email_result),
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["POST"])
@@ -592,16 +586,16 @@ def forgot_password_api(request):
     code = ''.join(random.choices(string.digits, k=6))
     cache.set(f"reset_code_{email}", code, timeout=600)
 
-    try:
-        send_system_email_async(
-            subject='Password Reset Code - Alumni System',
-            message=f'Dear {user.first_name},\n\nYour password reset code is: {code}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.\n\nBest regards,\nAlumni Management Team',
-            recipient=email,
-        )
-    except Exception as e:
-        return Response({"error": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    email_result = dispatch_email(
+        subject='Password Reset Code - Alumni System',
+        text_body=f'Dear {user.first_name},\n\nYour password reset code is: {code}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.\n\nBest regards,\nAlumni Management Team',
+        recipient=email,
+    )
 
-    return Response({"message": "Verification code sent to your email"}, status=status.HTTP_200_OK)
+    return Response(
+        _build_response("Verification code sent to your email", email_result=email_result),
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["POST"])

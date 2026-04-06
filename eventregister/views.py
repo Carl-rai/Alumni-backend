@@ -65,8 +65,10 @@ class EventRegistrationViewSet(viewsets.ModelViewSet):
             event.capacity -= (1 + registration.guest_count)
             event.save(update_fields=['capacity'])
 
-        send_registration_confirmation_email(registration)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        email_result = send_registration_confirmation_email(registration)
+        response_data = serializer.data.copy()
+        response_data.update(email_result)
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
