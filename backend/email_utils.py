@@ -5,53 +5,49 @@ import threading
 logger = logging.getLogger(__name__)
 
 
-def _get_resend_api_key():
-    key = os.getenv("RESEND_API_KEY", "").strip()
+def _get_sendgrid_api_key():
+    key = os.getenv("SENDGRID_API_KEY", "").strip()
     if not key:
-        raise RuntimeError("RESEND_API_KEY is not configured in environment variables.")
+        raise RuntimeError("SENDGRID_API_KEY is not configured in environment variables.")
     return key
 
 
 def _get_from_email():
-    # Resend requires a verified domain, use their shared sender
-    # but set reply-to as the real Gmail so replies go there
-    return "Alumni Management System <onboarding@resend.dev>"
-
-
-def _get_reply_to():
     return os.getenv("DEFAULT_FROM_EMAIL", "").strip()
 
 
 def send_system_email(subject, message, recipient):
-    import resend
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail
     recipient = (recipient or "").strip()
     if not recipient:
         raise ValueError("Recipient email is required.")
-    resend.api_key = _get_resend_api_key()
-    resend.Emails.send({
-        "from": _get_from_email(),
-        "reply_to": [_get_reply_to()],
-        "to": [recipient],
-        "subject": subject,
-        "text": message,
-    })
+    mail = Mail(
+        from_email=_get_from_email(),
+        to_emails=recipient,
+        subject=subject,
+        plain_text_content=message,
+    )
+    sg = SendGridAPIClient(_get_sendgrid_api_key())
+    sg.send(mail)
     return True
 
 
 def send_system_html_email(subject, text_body, html_body, recipient):
-    import resend
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail
     recipient = (recipient or "").strip()
     if not recipient:
         raise ValueError("Recipient email is required.")
-    resend.api_key = _get_resend_api_key()
-    resend.Emails.send({
-        "from": _get_from_email(),
-        "reply_to": [_get_reply_to()],
-        "to": [recipient],
-        "subject": subject,
-        "text": text_body,
-        "html": html_body,
-    })
+    mail = Mail(
+        from_email=_get_from_email(),
+        to_emails=recipient,
+        subject=subject,
+        plain_text_content=text_body,
+        html_content=html_body,
+    )
+    sg = SendGridAPIClient(_get_sendgrid_api_key())
+    sg.send(mail)
     return True
 
 
@@ -74,13 +70,13 @@ def send_system_html_email_async(subject, text_body, html_body, recipient):
 
 
 def smtp_connection_diagnostics(timeout=10):
-    api_key = os.getenv("RESEND_API_KEY", "").strip()
+    api_key = os.getenv("SENDGRID_API_KEY", "").strip()
     from_email = _get_from_email()
     return {
-        "provider": "resend",
+        "provider": "sendgrid",
         "has_api_key": bool(api_key),
         "from_email": bool(from_email),
         "connect_ok": bool(api_key),
         "auth_ok": bool(api_key),
-        "error": None if api_key else "RESEND_API_KEY is not set.",
+        "error": None if api_key else "SENDGRID_API_KEY is not set.",
     }
