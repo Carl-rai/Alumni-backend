@@ -22,14 +22,16 @@ def _normalize_match_value(value):
 
 
 def _find_matching_alumni_record(user):
+    user_alumni_id = _normalize_match_value(user.alumni_id)
     user_first_name = _normalize_match_value(user.first_name)
     user_course = _normalize_match_value(user.course)
     user_year_graduate = user.year_graduate
 
-    if not user_first_name or not user_course or user_year_graduate is None:
+    if not user_alumni_id or not user_first_name or not user_course or user_year_graduate is None:
         return None
 
     alumni_records = AlumniStudent.objects.select_related("category").filter(
+        alumni_id__iexact=user.alumni_id,
         year_graduate=user_year_graduate
     )
 
@@ -241,6 +243,7 @@ def approve_user_api(request, user_id):
     """Approve a user"""
     try:
         user = CustomUser.objects.get(id=user_id, role="user")
+        previous_status = user.status
 
         matched_alumni = _find_matching_alumni_record(user)
         if matched_alumni is None:
@@ -248,18 +251,34 @@ def approve_user_api(request, user_id):
                 {
                     "error": (
                         "User cannot be approved because no matching alumni student "
-                        "record was found for first name, course, and year_graduate."
+                        "record was found for alumni_id, first name, course, and year_graduate."
                     )
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         user.status = "approved"
-        user.save()
+        user.save(update_fields=["status"])
+
+        if previous_status == "rejected":
+            approval_subject = "Account Approved After Review - Alumni System"
+            approval_message = (
+                f"Dear {user.first_name} {user.last_name},\n\n"
+                "Your alumni account was reviewed again and has now been approved. "
+                "You can now login to the system.\n\n"
+                "Best regards,\nAlumni Management Team"
+            )
+        else:
+            approval_subject = "Account Approved - Alumni System"
+            approval_message = (
+                f"Dear {user.first_name} {user.last_name},\n\n"
+                "Your alumni account has been approved! You can now login to the system.\n\n"
+                "Best regards,\nAlumni Management Team"
+            )
 
         email_result = dispatch_email(
-            subject='Account Approved - Alumni System',
-            text_body=f'Dear {user.first_name} {user.last_name},\n\nYour alumni account has been approved! You can now login to the system.\n\nBest regards,\nAlumni Management Team',
+            subject=approval_subject,
+            text_body=approval_message,
             recipient=user.email,
         )
 
