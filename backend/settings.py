@@ -15,6 +15,7 @@ from datetime import timedelta
 import dj_database_url
 from decouple import config
 import os
+import importlib.util
 
 
 def load_env_file(env_path):
@@ -64,15 +65,15 @@ ALLOWED_HOSTS = get_list_env("DJANGO_ALLOWED_HOSTS", ["127.0.0.1", "localhost"])
 
 # Application definition
 
+cloudinary_installed = importlib.util.find_spec("cloudinary_storage") is not None and importlib.util.find_spec("cloudinary") is not None
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
-    'cloudinary_storage',
     'django.contrib.staticfiles',
-    'cloudinary',
     'rest_framework',
     'rest_framework_simplejwt', 
     'corsheaders',
@@ -85,6 +86,10 @@ INSTALLED_APPS = [
     'report',
  
 ]
+
+if cloudinary_installed:
+    INSTALLED_APPS.insert(5, 'cloudinary_storage')
+    INSTALLED_APPS.insert(7, 'cloudinary')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -190,7 +195,7 @@ USE_TZ = True
 cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME") or os.getenv("CLOUDINARY_CLOU_NAME")
 cloud_api_key = os.getenv("CLOUDINARY_API_KEY")
 cloud_api_secret = os.getenv("CLOUDINARY_API_SECRET")
-use_cloudinary_storage = all([cloud_name, cloud_api_key, cloud_api_secret])
+use_cloudinary_storage = cloudinary_installed and all([cloud_name, cloud_api_key, cloud_api_secret])
 
 if use_cloudinary_storage:
     CLOUDINARY_STORAGE = {
