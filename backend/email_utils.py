@@ -17,8 +17,8 @@ def _get_from_email():
 
 
 def get_email_delivery_mode():
-    mode = os.getenv("EMAIL_DELIVERY_MODE", "backend").strip().lower()
-    return mode or "backend"
+    mode = os.getenv("EMAIL_DELIVERY_MODE", "frontend").strip().lower()
+    return mode or "frontend"
 
 
 def build_email_payload(subject, recipient, text_body=None, html_body=None):
