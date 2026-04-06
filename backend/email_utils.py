@@ -1,140 +1,86 @@
 import logging
-import socket
-from concurrent.futures import ThreadPoolExecutor
-
-from django.conf import settings
-from django.core.mail import EmailMultiAlternatives, get_connection, send_mail
+import os
+import threading
 
 logger = logging.getLogger(__name__)
-_email_executor = ThreadPoolExecutor(
-    max_workers=max(1, int(getattr(settings, "EMAIL_ASYNC_MAX_WORKERS", 2)))
-)
 
 
-def ensure_email_configured():
-    if not settings.EMAIL_HOST_USER or not settings.EMAIL_HOST_PASSWORD:
-        raise RuntimeError(
-            "Email service is not configured. Set EMAIL_HOST_USER and EMAIL_HOST_PASSWORD in the deployment environment."
-        )
+def _get_resend_api_key():
+    key = os.getenv("RESEND_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("RESEND_API_KEY is not configured in environment variables.")
+    return key
 
 
-def _queue_email_task(email_type, recipient, send_func, *args, **kwargs):
-    recipient = (recipient or "").strip()
-    if not recipient:
-        raise ValueError("Recipient email is required.")
+def _get_from_email():
+    # Resend requires a verified domain, use their shared sender
+    # but set reply-to as the real Gmail so replies go there
+    return "Alumni Management System <onboarding@resend.dev>"
 
-    ensure_email_configured()
 
-    def _send():
-        try:
-            send_func(*args, **kwargs)
-        except Exception:
-            logger.exception("Failed to send %s email to %s", email_type, recipient)
-
-    _email_executor.submit(_send)
-    return True
+def _get_reply_to():
+    return os.getenv("DEFAULT_FROM_EMAIL", "").strip()
 
 
 def send_system_email(subject, message, recipient):
+    import resend
     recipient = (recipient or "").strip()
     if not recipient:
         raise ValueError("Recipient email is required.")
-
-    ensure_email_configured()
-
-    return send_mail(
-        subject=subject,
-        message=message,
-        from_email=settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER,
-        recipient_list=[recipient],
-        fail_silently=False,
-    )
+    resend.api_key = _get_resend_api_key()
+    resend.Emails.send({
+        "from": _get_from_email(),
+        "reply_to": [_get_reply_to()],
+        "to": [recipient],
+        "subject": subject,
+        "text": message,
+    })
+    return True
 
 
 def send_system_html_email(subject, text_body, html_body, recipient):
+    import resend
     recipient = (recipient or "").strip()
     if not recipient:
         raise ValueError("Recipient email is required.")
-
-    ensure_email_configured()
-
-    email = EmailMultiAlternatives(
-        subject=subject,
-        body=text_body,
-        from_email=settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER,
-        to=[recipient],
-    )
-    email.attach_alternative(html_body, "text/html")
-    email.send(fail_silently=False)
+    resend.api_key = _get_resend_api_key()
+    resend.Emails.send({
+        "from": _get_from_email(),
+        "reply_to": [_get_reply_to()],
+        "to": [recipient],
+        "subject": subject,
+        "text": text_body,
+        "html": html_body,
+    })
     return True
 
 
 def send_system_email_async(subject, message, recipient):
-    """Queue plain-text email so the request can return immediately."""
-    return _queue_email_task(
-        "plain-text",
-        recipient,
-        send_system_email,
-        subject,
-        message,
-        recipient,
-    )
+    def _send():
+        try:
+            send_system_email(subject, message, recipient)
+        except Exception as e:
+            logger.error("Failed to send email to %s: %s", recipient, e)
+    threading.Thread(target=_send, daemon=True).start()
 
 
 def send_system_html_email_async(subject, text_body, html_body, recipient):
-    """Queue HTML email so the request can return immediately."""
-    return _queue_email_task(
-        "html",
-        recipient,
-        send_system_html_email,
-        subject,
-        text_body,
-        html_body,
-        recipient,
-    )
+    def _send():
+        try:
+            send_system_html_email(subject, text_body, html_body, recipient)
+        except Exception as e:
+            logger.error("Failed to send HTML email to %s: %s", recipient, e)
+    threading.Thread(target=_send, daemon=True).start()
 
 
 def smtp_connection_diagnostics(timeout=10):
-    host = (settings.EMAIL_HOST or "").strip()
-    port = int(settings.EMAIL_PORT or 0)
-
-    result = {
-        "email_backend": settings.EMAIL_BACKEND,
-        "host": host,
-        "port": port,
-        "use_tls": bool(getattr(settings, "EMAIL_USE_TLS", False)),
-        "has_host_user": bool((settings.EMAIL_HOST_USER or "").strip()),
-        "has_host_password": bool((settings.EMAIL_HOST_PASSWORD or "").strip()),
-        "default_from_email": bool((settings.DEFAULT_FROM_EMAIL or "").strip()),
-        "timeout": timeout,
-        "connect_ok": False,
-        "auth_ok": False,
-        "error_stage": None,
-        "error": None,
+    api_key = os.getenv("RESEND_API_KEY", "").strip()
+    from_email = _get_from_email()
+    return {
+        "provider": "resend",
+        "has_api_key": bool(api_key),
+        "from_email": bool(from_email),
+        "connect_ok": bool(api_key),
+        "auth_ok": bool(api_key),
+        "error": None if api_key else "RESEND_API_KEY is not set.",
     }
-
-    if not host or not port:
-        result["error"] = "EMAIL_HOST or EMAIL_PORT is not configured."
-        return result
-
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            result["connect_ok"] = True
-    except Exception as exc:
-        result["error_stage"] = "connect"
-        result["error"] = str(exc)
-        return result
-
-    try:
-        connection = get_connection(
-            fail_silently=False,
-            timeout=timeout,
-        )
-        connection.open()
-        result["auth_ok"] = True
-        connection.close()
-    except Exception as exc:
-        result["error_stage"] = "auth"
-        result["error"] = str(exc)
-
-    return result
