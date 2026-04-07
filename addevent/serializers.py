@@ -26,10 +26,14 @@ class EventSerializer(serializers.ModelSerializer):
 
     def get_image(self, obj):
         if obj.image:
+            image_url = obj.image.url
+            if image_url.startswith(('http://', 'https://')):
+                return image_url
+
             request = self.context.get('request')
             if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
+                return request.build_absolute_uri(image_url)
+            return image_url
         return None
 
     def validate_image_upload(self, value):
