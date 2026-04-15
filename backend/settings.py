@@ -216,7 +216,13 @@ USE_TZ = True
 cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME") or os.getenv("CLOUDINARY_CLOU_NAME")
 cloud_api_key = os.getenv("CLOUDINARY_API_KEY")
 cloud_api_secret = os.getenv("CLOUDINARY_API_SECRET")
-use_cloudinary_storage = cloudinary_installed and all([cloud_name, cloud_api_key, cloud_api_secret])
+cloudinary_url = os.getenv("CLOUDINARY_URL", "").strip()
+if cloudinary_url:
+    os.environ.setdefault("CLOUDINARY_URL", cloudinary_url)
+
+use_cloudinary_storage = cloudinary_installed and (
+    bool(cloudinary_url) or all([cloud_name, cloud_api_key, cloud_api_secret])
+)
 
 if use_cloudinary_storage:
     CLOUDINARY_STORAGE = {
