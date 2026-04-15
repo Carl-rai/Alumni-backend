@@ -1,5 +1,7 @@
 from django.db import models
 
+from backend.storage import AssetFolderCloudinaryStorage
+
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
@@ -23,7 +25,7 @@ class AlumniStudent(models.Model):
     middle_name = models.CharField(max_length=50, blank=True, null=True)
     last_name = models.CharField(max_length=50)
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES)
-    age = models.PositiveIntegerField()
+    age = models.PositiveIntegerField(null=True, blank=True)
     year_graduate = models.PositiveIntegerField()
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='alumni')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -34,3 +36,20 @@ class AlumniStudent(models.Model):
 
     class Meta:
         ordering = ['-year_graduate']
+
+
+class AlumniStudentCSVUpload(models.Model):
+    title = models.CharField(max_length=150, blank=True, null=True)
+    csv_file = models.FileField(
+        upload_to='alumni-students/csv/',
+        storage=AssetFolderCloudinaryStorage(),
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        if self.title:
+            return self.title
+        return self.csv_file.name
+
+    class Meta:
+        ordering = ['-uploaded_at']

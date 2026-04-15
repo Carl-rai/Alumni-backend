@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/', include('eventregister.urls')),
     path('api/', include('career.urls')),
     path('api/', include('report.urls')),
+    path('api/', include('idrequest.urls')),
     
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

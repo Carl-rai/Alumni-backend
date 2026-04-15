@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser
+from .models import CustomUser, AuditLog
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -64,8 +64,8 @@ class StaffCreateSerializer(serializers.ModelSerializer):
         ]
 
     def validate_role(self, value):
-        if value not in ['staff', 'admin']:
-            raise serializers.ValidationError("Role must be 'staff' or 'admin'")
+        if value not in ['staff', 'id-staff', 'admin']:
+            raise serializers.ValidationError("Role must be 'staff', 'id-staff', or 'admin'")
         return value
 
     def create(self, validated_data):
@@ -79,8 +79,31 @@ class StaffCreateSerializer(serializers.ModelSerializer):
         if role == 'admin':
             user.is_staff = True
             user.is_superuser = True
-        elif role == 'staff':
+        elif role in ('staff', 'id-staff'):
             user.is_staff = True
+            user.is_superuser = False
             
         user.save()
         return user
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "actor_email",
+            "actor_name",
+            "actor_role",
+            "action",
+            "method",
+            "path",
+            "resource",
+            "resource_id",
+            "success",
+            "status_code",
+            "ip_address",
+            "user_agent",
+            "details",
+            "created_at",
+        ]

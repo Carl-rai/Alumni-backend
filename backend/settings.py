@@ -66,6 +66,7 @@ ALLOWED_HOSTS = get_list_env("DJANGO_ALLOWED_HOSTS", ["127.0.0.1", "localhost"])
 # Application definition
 
 cloudinary_installed = importlib.util.find_spec("cloudinary_storage") is not None and importlib.util.find_spec("cloudinary") is not None
+whitenoise_installed = importlib.util.find_spec("whitenoise") is not None
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -84,6 +85,7 @@ INSTALLED_APPS = [
     'stories',
     'career',
     'report',
+    'idrequest',
  
 ]
 
@@ -93,15 +95,18 @@ if cloudinary_installed:
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'user.audit.AuditLogMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+if whitenoise_installed:
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 
 ROOT_URLCONF = 'backend.urls'
 
@@ -112,6 +117,21 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
+
+CORS_ALLOW_HEADERS = list({
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+    "x-actor-role",
+    "x-actor-name",
+    "x-actor-email",
+})
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
@@ -224,7 +244,11 @@ STORAGES = {
         ),
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": (
+            "whitenoise.storage.CompressedManifestStaticFilesStorage"
+            if whitenoise_installed
+            else "django.contrib.staticfiles.storage.StaticFilesStorage"
+        ),
     },
 }
 

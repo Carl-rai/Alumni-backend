@@ -8,8 +8,9 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db import models
 from backend.email_utils import dispatch_email, smtp_connection_diagnostics
-from .serializers import RegisterSerializer, StaffCreateSerializer
-from .models import CustomUser
+from .serializers import RegisterSerializer, StaffCreateSerializer, AuditLogSerializer
+from .models import CustomUser, AuditLog
+from .audit import log_audit_event
 from alumnistudent.models import AlumniStudent
 import random
 import string
@@ -23,11 +24,10 @@ def _normalize_match_value(value):
 
 def _find_matching_alumni_record(user):
     user_alumni_id = _normalize_match_value(user.alumni_id)
-    user_first_name = _normalize_match_value(user.first_name)
     user_course = _normalize_match_value(user.course)
     user_year_graduate = user.year_graduate
 
-    if not user_alumni_id or not user_first_name or not user_course or user_year_graduate is None:
+    if not user_alumni_id or not user_course or user_year_graduate is None:
         return None
 
     alumni_records = AlumniStudent.objects.select_related("category").filter(
@@ -36,12 +36,11 @@ def _find_matching_alumni_record(user):
     )
 
     for alumni in alumni_records:
-        alumni_first_name = _normalize_match_value(alumni.first_name)
         alumni_category = _normalize_match_value(
             alumni.category.name if alumni.category else ""
         )
 
-        if alumni_first_name == user_first_name and alumni_category == user_course:
+        if alumni_category == user_course:
             return alumni
 
     return None
@@ -74,11 +73,24 @@ def _build_response(message, email_result=None, **extra):
     return data
 
 
+def _log_action(request, response=None, *, action=None, details=None, success=None):
+    try:
+        setattr(request, "_audit_logged", True)
+        log_audit_event(request, response=response, action=action, details=details, success=success)
+    except Exception:
+        pass
+
+
 @api_view(["POST"])
 def register_api(request):
     serializer = RegisterSerializer(data=request.data)
     if serializer.is_valid():
-        serializer.save()
+        user = serializer.save()
+        _log_action(
+            request,
+            action="register",
+            details={"email": user.email, "role": user.role},
+        )
         return Response({"message": "Registration successful"}, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -106,7 +118,7 @@ def login_api(request):
         
         refresh = RefreshToken.for_user(user)
         
-        return Response({
+        response = Response({
             "message": "Login successful",
             "access": str(refresh.access_token),
             "refresh": str(refresh),
@@ -116,6 +128,13 @@ def login_api(request):
             "first_name": user.first_name,
             "last_name": user.last_name,
         }, status=status.HTTP_200_OK)
+        _log_action(
+            request,
+            response=response,
+            action="login",
+            details={"email": user.email, "role": user.role},
+        )
+        return response
 
     return Response(
         {"error": "Invalid email/alumni ID or password"},
@@ -133,14 +152,28 @@ def create_staff_api(request):
         password = request.data.get('password')
         email_result = dispatch_email(
             subject='Staff Account Created - Alumni System',
-            text_body=f'Dear {user.first_name} {user.last_name},\n\nYour staff account has been created!\n\nEmail: {user.email}\nPassword: {password}\n\nPlease login and change your password immediately.\n\nBest regards,\nAlumni Management Team',
+            text_body=(
+                f'Dear {user.first_name} {user.last_name},\n\n'
+                f'Your {user.role} account has been created!\n\n'
+                f'Email: {user.email}\n'
+                f'Password: {password}\n\n'
+                'Please login and change your password immediately.\n\n'
+                'Best regards,\nAlumni Management Team'
+            ),
             recipient=user.email,
         )
 
-        return Response(
-            _build_response("Staff account created successfully", email_result=email_result),
+        response = Response(
+            _build_response("Staff account created successfully", email_result=email_result, role=user.role),
             status=status.HTTP_201_CREATED,
         )
+        _log_action(
+            request,
+            response=response,
+            action="create_staff",
+            details={"email": user.email, "role": user.role},
+        )
+        return response
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -221,8 +254,8 @@ def get_users_api(request):
 
 @api_view(["GET"])
 def get_staff_api(request):
-    """Get all users with role 'staff'"""
-    staff = CustomUser.objects.filter(role="staff")
+    """Get all users with role 'staff'-like roles"""
+    staff = CustomUser.objects.filter(role__in=["staff", "id-staff"])
     data = [{
         "id": user.id,
         "email": user.email,
@@ -232,6 +265,7 @@ def get_staff_api(request):
         "gender": user.gender,
         "age": user.age,
         "position": user.position,
+        "role": user.role,
         "status": user.status,
         "profile_image": request.build_absolute_uri(user.profile_image.url) if user.profile_image else None,
     } for user in staff]
@@ -251,7 +285,7 @@ def approve_user_api(request, user_id):
                 {
                     "error": (
                         "User cannot be approved because no matching alumni student "
-                        "record was found for alumni_id, first name, course, and year_graduate."
+                        "record was found for alumni_id, course, and year_graduate."
                     )
                 },
                 status=status.HTTP_400_BAD_REQUEST,
@@ -282,10 +316,17 @@ def approve_user_api(request, user_id):
             recipient=user.email,
         )
 
-        return Response(
+        response = Response(
             _build_response("User approved successfully", email_result=email_result),
             status=status.HTTP_200_OK,
         )
+        _log_action(
+            request,
+            response=response,
+            action="approve_user",
+            details={"user_id": user_id, "alumni_id": user.alumni_id},
+        )
+        return response
     except CustomUser.DoesNotExist:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -305,10 +346,17 @@ def reject_user_api(request, user_id):
             recipient=user.email,
         )
 
-        return Response(
+        response = Response(
             _build_response("User rejected successfully", email_result=email_result),
             status=status.HTTP_200_OK,
         )
+        _log_action(
+            request,
+            response=response,
+            action="reject_user",
+            details={"user_id": user_id, "reason": reason},
+        )
+        return response
     except CustomUser.DoesNotExist:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -347,10 +395,17 @@ def update_user_api(request, user_id):
                 recipient=user.email,
             )
 
-        return Response(
+        response = Response(
             _build_response("User updated successfully", email_result=email_result),
             status=status.HTTP_200_OK,
         )
+        _log_action(
+            request,
+            response=response,
+            action="update_user",
+            details={"user_id": user_id, "old_alumni_id": old_alumni_id, "new_alumni_id": user.alumni_id},
+        )
+        return response
     except CustomUser.DoesNotExist:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -360,7 +415,9 @@ def delete_user_api(request, user_id):
     """Delete a user"""
     try:
         user = CustomUser.objects.get(id=user_id, role="user")
+        details = {"user_id": user.id, "email": user.email, "alumni_id": user.alumni_id}
         user.delete()
+        _log_action(request, action="delete_user", details=details)
         return Response({"message": "User deleted successfully"}, status=status.HTTP_200_OK)
     except CustomUser.DoesNotExist:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -370,8 +427,10 @@ def delete_user_api(request, user_id):
 def delete_staff_api(request, user_id):
     """Delete a staff member"""
     try:
-        user = CustomUser.objects.get(id=user_id, role="staff")
+        user = CustomUser.objects.get(id=user_id, role__in=["staff", "id-staff"])
+        details = {"user_id": user.id, "email": user.email, "role": user.role}
         user.delete()
+        _log_action(request, action="delete_staff", details=details)
         return Response({"message": "Staff deleted successfully"}, status=status.HTTP_200_OK)
     except CustomUser.DoesNotExist:
         return Response({"error": "Staff not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -390,7 +449,21 @@ def update_staff_api(request, user_id):
         user.age = request.data.get('age', user.age)
         user.position = request.data.get('position', user.position)
         user.role = request.data.get('role', user.role)
+        if user.role == "admin":
+            user.is_staff = True
+            user.is_superuser = True
+        elif user.role in ("staff", "id-staff"):
+            user.is_staff = True
+            user.is_superuser = False
+        else:
+            user.is_staff = False
+            user.is_superuser = False
         user.save()
+        _log_action(
+            request,
+            action="update_staff",
+            details={"user_id": user.id, "email": user.email, "role": user.role},
+        )
         return Response({"message": "Staff updated successfully"}, status=status.HTTP_200_OK)
     except CustomUser.DoesNotExist:
         return Response({"error": "Staff not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -404,7 +477,7 @@ def get_staff_profile_api(request):
         return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        user = CustomUser.objects.get(email=email, role="staff")
+        user = CustomUser.objects.get(email=email, role__in=["staff", "id-staff"])
         data = {
             "id": user.id,
             "email": user.email,
@@ -414,6 +487,7 @@ def get_staff_profile_api(request):
             "gender": user.gender,
             "age": user.age,
             "position": user.position,
+            "role": user.role,
             "password_changed": user.password_changed,
             "profile_image": request.build_absolute_uri(user.profile_image.url) if user.profile_image else None,
         }
@@ -435,16 +509,17 @@ def change_password_api(request):
     try:
         user = CustomUser.objects.get(email=email)
         
-        if user.role == "staff" and user.password_changed:
+        if user.role in ("staff", "id-staff") and user.password_changed:
             return Response({"error": "You have already changed your password once. Contact admin for further changes."}, status=status.HTTP_403_FORBIDDEN)
         
         if not user.check_password(current_password):
             return Response({"error": "Current password is incorrect"}, status=status.HTTP_400_BAD_REQUEST)
         
         user.set_password(new_password)
-        if user.role == "staff":
+        if user.role in ("staff", "id-staff"):
             user.password_changed = True
         user.save()
+        _log_action(request, action="change_password", details={"email": user.email, "role": user.role})
         
         return Response({"message": "Password changed successfully"}, status=status.HTTP_200_OK)
     except CustomUser.DoesNotExist:
@@ -524,6 +599,7 @@ def update_user_profile_api(request):
         user.skills = request.data.get('skills', user.skills)
         user.bio = request.data.get('bio', user.bio)
         user.save()
+        _log_action(request, action="update_profile", details={"email": user.email, "role": user.role})
         return Response({"message": "Profile updated successfully"}, status=status.HTTP_200_OK)
     except CustomUser.DoesNotExist:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -539,6 +615,7 @@ def toggle_privacy_api(request):
         user = CustomUser.objects.get(email=email, role="user")
         user.is_private = not user.is_private
         user.save()
+        _log_action(request, action="toggle_privacy", details={"email": user.email, "is_private": user.is_private})
         return Response({"is_private": user.is_private}, status=status.HTTP_200_OK)
     except CustomUser.DoesNotExist:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -752,6 +829,7 @@ def upload_profile_image_api(request):
             user.profile_image.delete(save=False)
         user.profile_image = image
         user.save()
+        _log_action(request, action="upload_profile_image", details={"email": user.email, "role": user.role, "file_name": getattr(image, "name", None)})
         return Response({
             "message": "Profile image updated",
             "profile_image": request.build_absolute_uri(user.profile_image.url)
@@ -794,3 +872,19 @@ def email_debug_api(request):
         else status.HTTP_503_SERVICE_UNAVAILABLE
     )
     return Response(diagnostics, status=status_code)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def audit_logs_api(request):
+    if getattr(request.user, "role", None) != "admin":
+        return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
+
+    limit = request.query_params.get("limit", "200")
+    try:
+        limit_value = max(1, min(int(limit), 1000))
+    except (TypeError, ValueError):
+        limit_value = 200
+
+    logs = AuditLog.objects.all()[:limit_value]
+    return Response(AuditLogSerializer(logs, many=True).data, status=status.HTTP_200_OK)

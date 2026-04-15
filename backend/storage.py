@@ -10,6 +10,11 @@ class AssetFolderCloudinaryStorage(MediaCloudinaryStorage):
     Media Library asset folders so folders appear in the console.
     """
 
+    def _get_resource_type(self, name):
+        if name.lower().endswith(".csv"):
+            return "raw"
+        return super()._get_resource_type(name)
+
     def _upload(self, name, content):
         options = {
             "use_filename": True,
