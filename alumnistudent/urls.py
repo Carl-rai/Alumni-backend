@@ -8,5 +8,10 @@ router.register(r'categories', CategoryViewSet)
 router.register(r'alumni-csv-uploads', AlumniStudentCSVUploadViewSet)
 
 urlpatterns = [
+    path(
+        "alumni-csv-uploads",
+        AlumniStudentCSVUploadViewSet.as_view({"get": "list", "post": "create"}),
+        name="alumni-csv-uploads-no-slash",
+    ),
     path('', include(router.urls)),
 ]

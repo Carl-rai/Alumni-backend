@@ -36,5 +36,6 @@ urlpatterns = [
     path("upload-profile-image/", upload_profile_image_api),
     path("directory/", directory_api),
     path("email-debug/", email_debug_api),
+    path("audit-logs", audit_logs_api, name="audit-logs-no-slash"),
     path("audit-logs/", audit_logs_api),
 ]
