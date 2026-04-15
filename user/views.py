@@ -6,6 +6,7 @@ from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 from django.core.cache import cache
+from django.core.mail import EmailMultiAlternatives
 from django.db import models
 from backend.email_utils import dispatch_email, smtp_connection_diagnostics
 from .serializers import RegisterSerializer, StaffCreateSerializer, AuditLogSerializer
@@ -872,6 +873,45 @@ def email_debug_api(request):
         else status.HTTP_503_SERVICE_UNAVAILABLE
     )
     return Response(diagnostics, status=status_code)
+
+
+@api_view(["POST"])
+def send_email_api(request):
+    to = str(request.data.get("to", "")).strip()
+    subject = str(request.data.get("subject", "")).strip()
+    text_body = request.data.get("text")
+    html_body = request.data.get("html")
+
+    if not to or not subject or (not text_body and not html_body):
+        return Response(
+            {"error": "to, subject, and text or html are required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    from_email = settings.DEFAULT_FROM_EMAIL or settings.EMAIL_HOST_USER
+    if not from_email:
+        return Response(
+            {"error": "Email sender is not configured on the backend."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    try:
+        message = EmailMultiAlternatives(
+            subject=subject,
+            body=str(text_body or ""),
+            from_email=from_email,
+            to=[to],
+        )
+        if html_body:
+            message.attach_alternative(str(html_body), "text/html")
+        message.send(fail_silently=False)
+    except Exception as exc:
+        return Response(
+            {"error": f"Failed to send email: {exc}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    return Response({"message": "Email sent successfully"}, status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])
