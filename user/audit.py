@@ -4,6 +4,11 @@ import json
 import re
 from typing import Any
 
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import AccessToken
+
 from .models import AuditLog
 
 
@@ -20,6 +25,32 @@ def _header_value(request, *names: str) -> str:
         if value:
             return value
     return ""
+
+
+def _user_from_bearer_token(request):
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+
+    token_value = auth_header.split(" ", 1)[1].strip()
+    if not token_value:
+        return None
+
+    try:
+        token = AccessToken(token_value)
+    except TokenError:
+        return None
+
+    user_id_claim = settings.SIMPLE_JWT.get("USER_ID_CLAIM", "user_id")
+    user_id = token.get(user_id_claim)
+    if user_id is None:
+        return None
+
+    User = get_user_model()
+    try:
+        return User.objects.filter(pk=user_id).first()
+    except Exception:
+        return None
 
 
 def _safe_json_body(request) -> dict[str, Any]:
@@ -99,6 +130,8 @@ def log_audit_event(request, response=None, *, action: str | None = None, detail
     actor_role = _header_value(request, "X-Actor-Role", "X-User-Role") or "anonymous"
 
     request_user = getattr(request, "user", None)
+    if not getattr(request_user, "is_authenticated", False):
+        request_user = _user_from_bearer_token(request)
     if getattr(request_user, "is_authenticated", False):
         actor_email = actor_email or getattr(request_user, "email", "")
         actor_name = actor_name or f"{getattr(request_user, 'first_name', '')} {getattr(request_user, 'last_name', '')}".strip()
