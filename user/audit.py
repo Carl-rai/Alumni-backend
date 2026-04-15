@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import ipaddress
 from typing import Any
 
 from django.conf import settings
@@ -25,6 +26,18 @@ def _header_value(request, *names: str) -> str:
         if value:
             return value
     return ""
+
+
+def _normalize_ip_address(request) -> str | None:
+    raw_value = _header_value(request, "X-Forwarded-For", "X-Real-IP") or request.META.get("REMOTE_ADDR") or ""
+    first_value = raw_value.split(",", 1)[0].strip()
+    if not first_value:
+        return None
+
+    try:
+        return str(ipaddress.ip_address(first_value))
+    except ValueError:
+        return None
 
 
 def _user_from_bearer_token(request):
@@ -159,7 +172,7 @@ def log_audit_event(request, response=None, *, action: str | None = None, detail
         resource_id=resource_id,
         success=success,
         status_code=status_code,
-        ip_address=_header_value(request, "X-Forwarded-For", "X-Real-IP") or request.META.get("REMOTE_ADDR"),
+        ip_address=_normalize_ip_address(request),
         user_agent=request.META.get("HTTP_USER_AGENT"),
         details=payload if isinstance(payload, dict) else {"payload": payload},
     )
