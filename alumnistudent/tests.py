@@ -2,7 +2,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
 from alumnistudent.models import AlumniStudent, Category
-from alumnistudent.serializers import AlumniStudentCSVUploadSerializer
+from alumnicsvupload.serializers import AlumniStudentCSVUploadSerializer
 
 
 class AlumniStudentCSVUploadSerializerTests(TestCase):

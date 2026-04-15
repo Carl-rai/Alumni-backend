@@ -1,5 +1,7 @@
 from rest_framework import serializers
-from .models import CustomUser, AuditLog
+
+from auditlogs.serializers import AuditLogSerializer  # backwards-compatible re-export
+from .models import CustomUser
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -85,25 +87,3 @@ class StaffCreateSerializer(serializers.ModelSerializer):
             
         user.save()
         return user
-
-
-class AuditLogSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AuditLog
-        fields = [
-            "id",
-            "actor_email",
-            "actor_name",
-            "actor_role",
-            "action",
-            "method",
-            "path",
-            "resource",
-            "resource_id",
-            "success",
-            "status_code",
-            "ip_address",
-            "user_agent",
-            "details",
-            "created_at",
-        ]

@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import register_api, login_api, create_staff_api, get_users_api, get_user_by_id_api, get_staff_api, approve_user_api, reject_user_api, update_user_api, update_staff_api, delete_staff_api, delete_user_api, get_staff_profile_api, change_password_api, get_user_profile_api, update_user_profile_api, toggle_privacy_api, stats_api, me_api, forgot_password_api, verify_code_api, reset_password_api, check_email_api, send_registration_otp_api, verify_registration_otp_api, notifications_api, user_notifications_api, upload_profile_image_api, directory_api, email_debug_api, audit_logs_api
+from .views import register_api, login_api, create_staff_api, get_users_api, get_user_by_id_api, get_staff_api, approve_user_api, reject_user_api, update_user_api, update_staff_api, delete_staff_api, delete_user_api, get_staff_profile_api, change_password_api, get_user_profile_api, update_user_profile_api, toggle_privacy_api, stats_api, me_api, forgot_password_api, verify_code_api, reset_password_api, check_email_api, send_registration_otp_api, verify_registration_otp_api, notifications_api, user_notifications_api, upload_profile_image_api, directory_api, email_debug_api
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 
@@ -36,6 +36,4 @@ urlpatterns = [
     path("upload-profile-image/", upload_profile_image_api),
     path("directory/", directory_api),
     path("email-debug/", email_debug_api),
-    path("audit-logs", audit_logs_api, name="audit-logs-no-slash"),
-    path("audit-logs/", audit_logs_api),
 ]
