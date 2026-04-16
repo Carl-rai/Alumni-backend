@@ -1,4 +1,5 @@
 import csv
+import codecs
 from io import StringIO
 import re
 
@@ -17,9 +18,46 @@ REQUIRED_CSV_COLUMNS = [
     "Course",
 ]
 
+REQUIRED_COLUMN_ALIASES = {
+    "Alumni-Id": ("Alumni-Id", "Alumni ID"),
+    "Name": ("Name",),
+    "Gender": ("Gender",),
+    "Year-Graduate": ("Year-Graduate", "Year Graduated"),
+    "Course": ("Course",),
+}
+
 
 def _normalize_csv_header(value):
     return "".join(ch for ch in str(value).strip().lower() if ch not in {" ", "-", "_"})
+
+
+def _decode_csv_content(raw_content):
+    encodings = ["utf-8-sig", "cp1252", "latin-1"]
+    if raw_content.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)) or b"\x00" in raw_content[:256]:
+        encodings = ["utf-16", "utf-16-le", "utf-16-be"] + encodings
+
+    for encoding in encodings:
+        try:
+            decoded = raw_content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+
+        # UTF-16 content can technically decode under UTF-8 because of embedded NULs.
+        # If we see NULs here, keep searching for the real encoding.
+        if "\x00" in decoded:
+            continue
+
+        return decoded
+
+    raise serializers.ValidationError("CSV file must be encoded as UTF-8 or UTF-16.")
+
+
+def _get_csv_dialect(text_content):
+    sample = text_content[:4096]
+    try:
+        return csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t", "|"])
+    except csv.Error:
+        return csv.excel
 
 
 def _split_full_name(full_name):
@@ -57,13 +95,10 @@ class AlumniStudentCSVUploadSerializer(serializers.ModelSerializer):
         finally:
             value.seek(0)
 
-        try:
-            text_content = raw_content.decode("utf-8-sig")
-        except UnicodeDecodeError as exc:
-            raise serializers.ValidationError("CSV file must be encoded as UTF-8.") from exc
+        text_content = _decode_csv_content(raw_content)
 
         try:
-            reader = csv.reader(StringIO(text_content))
+            reader = csv.reader(StringIO(text_content), dialect=_get_csv_dialect(text_content))
             headers = next(reader)
         except StopIteration as exc:
             raise serializers.ValidationError("CSV file is empty.") from exc
@@ -72,7 +107,10 @@ class AlumniStudentCSVUploadSerializer(serializers.ModelSerializer):
         missing_columns = [
             column
             for column in REQUIRED_CSV_COLUMNS
-            if _normalize_csv_header(column) not in normalized_headers
+            if not any(
+                _normalize_csv_header(candidate) in normalized_headers
+                for candidate in REQUIRED_COLUMN_ALIASES[column]
+            )
         ]
 
         if missing_columns:
@@ -88,8 +126,8 @@ class AlumniStudentCSVUploadSerializer(serializers.ModelSerializer):
         finally:
             csv_file.seek(0)
 
-        text_content = raw_content.decode("utf-8-sig")
-        reader = csv.DictReader(StringIO(text_content))
+        text_content = _decode_csv_content(raw_content)
+        reader = csv.DictReader(StringIO(text_content), dialect=_get_csv_dialect(text_content))
 
         if not reader.fieldnames:
             raise serializers.ValidationError("CSV file is empty.")
@@ -98,13 +136,45 @@ class AlumniStudentCSVUploadSerializer(serializers.ModelSerializer):
         for fieldname in reader.fieldnames:
             header_map.setdefault(_normalize_csv_header(fieldname), fieldname)
 
+        alumni_id_header = next(
+            (header_map.get(_normalize_csv_header(candidate)) for candidate in REQUIRED_COLUMN_ALIASES["Alumni-Id"]),
+            None,
+        )
+        name_header = next(
+            (header_map.get(_normalize_csv_header(candidate)) for candidate in REQUIRED_COLUMN_ALIASES["Name"]),
+            None,
+        )
+        gender_header = next(
+            (header_map.get(_normalize_csv_header(candidate)) for candidate in REQUIRED_COLUMN_ALIASES["Gender"]),
+            None,
+        )
+        year_graduate_header = next(
+            (
+                header_map.get(_normalize_csv_header(candidate))
+                for candidate in REQUIRED_COLUMN_ALIASES["Year-Graduate"]
+            ),
+            None,
+        )
+        course_header = next(
+            (header_map.get(_normalize_csv_header(candidate)) for candidate in REQUIRED_COLUMN_ALIASES["Course"]),
+            None,
+        )
+
+        if not all([alumni_id_header, name_header, gender_header, year_graduate_header, course_header]):
+            raise serializers.ValidationError(
+                "CSV file is missing required column(s): Alumni-Id, Name, Gender, Year-Graduate, Course."
+            )
+
         imported = []
         for index, row in enumerate(reader, start=2):
-            alumni_id = str(row.get(header_map[_normalize_csv_header("Alumni-Id")], "")).strip()
-            name = str(row.get(header_map[_normalize_csv_header("Name")], "")).strip()
-            gender = _normalize_gender(row.get(header_map[_normalize_csv_header("Gender")], ""))
-            year_graduate_raw = str(row.get(header_map[_normalize_csv_header("Year-Graduate")], "")).strip()
-            course = str(row.get(header_map[_normalize_csv_header("Course")], "")).strip()
+            if not any(str(value).strip() for value in row.values()):
+                continue
+
+            alumni_id = str(row.get(alumni_id_header, "")).strip()
+            name = str(row.get(name_header, "")).strip()
+            gender = _normalize_gender(row.get(gender_header, ""))
+            year_graduate_raw = str(row.get(year_graduate_header, "")).strip()
+            course = str(row.get(course_header, "")).strip()
 
             if not alumni_id:
                 raise serializers.ValidationError(f"Row {index}: Alumni-Id is required.")
@@ -159,4 +229,3 @@ class AlumniStudentCSVUploadSerializer(serializers.ModelSerializer):
         if obj.csv_file:
             return obj.csv_file.url
         return None
-
