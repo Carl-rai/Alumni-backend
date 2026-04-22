@@ -14,11 +14,13 @@ def audit_logs_api(request):
         return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
 
     limit = request.query_params.get("limit", "200")
-    try:
-        limit_value = max(1, min(int(limit), 1000))
-    except (TypeError, ValueError):
-        limit_value = 200
+    logs = AuditLog.objects.all()
 
-    logs = AuditLog.objects.all()[:limit_value]
+    if limit not in {"", None, "all", "all_logs", "unlimited"}:
+        try:
+            limit_value = max(1, min(int(limit), 1000))
+        except (TypeError, ValueError):
+            limit_value = 200
+        logs = logs[:limit_value]
+
     return Response(AuditLogSerializer(logs, many=True).data, status=status.HTTP_200_OK)
-

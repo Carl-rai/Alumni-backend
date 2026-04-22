@@ -11,6 +11,8 @@ from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 
 from .models import IDRequest
+from .serializers import IDRequestStaffSerializer
+from user.audit import log_audit_event
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def submit_id_request(request):
@@ -66,26 +68,7 @@ def list_id_requests(request):
 
     status_filter = request.query_params.get("status", "pending")
     qs = IDRequest.objects.select_related("user").filter(status=status_filter).order_by("-created_at")
-
-    data = [
-        {
-            "id": r.id,
-            "user_id": r.user.id,
-            "alumni_id": r.user.alumni_id,
-            "first_name": r.user.first_name,
-            "middle_name": r.user.middle_name,
-            "last_name": r.user.last_name,
-            "email": r.user.email,
-            "course": r.user.course,
-            "year_graduate": r.user.year_graduate,
-            "gender": r.user.gender,
-            "note": r.note,
-            "status": r.status,
-            "created_at": r.created_at,
-        }
-        for r in qs
-    ]
-    return Response(data)
+    return Response(IDRequestStaffSerializer(qs, many=True).data)
 
 
 @api_view(["PATCH"])
@@ -149,7 +132,24 @@ def export_id_requests_csv(request):
 
     # Mark exported ones as "exported"
     if status_filter == "pending":
-        qs.update(status="exported")
+        exported_count = qs.update(status="exported")
+    else:
+        exported_count = 0
+
+    try:
+        setattr(request, "_audit_logged", True)
+        log_audit_event(
+            request,
+            response=response,
+            action="export_id_requests",
+            details={
+                "status_filter": status_filter,
+                "exported_count": exported_count,
+                "row_count": len(id_requests),
+            },
+        )
+    except Exception:
+        pass
 
     return response
 
@@ -325,19 +325,7 @@ def import_id_requests_csv(request):
             "missing_count": len(missing_rows),
             "invalid_count": len(invalid_rows),
             "updated_requests": [
-                {
-                    "id": req.id,
-                    "user_id": req.user.id,
-                    "alumni_id": req.user.alumni_id,
-                    "first_name": req.user.first_name,
-                    "middle_name": req.user.middle_name,
-                    "last_name": req.user.last_name,
-                    "email": req.user.email,
-                    "course": req.user.course,
-                    "year_graduate": req.user.year_graduate,
-                    "note": req.note,
-                    "status": req.status,
-                }
+                IDRequestStaffSerializer(req).data
                 for req in updated_requests
             ],
             "skipped_rows": skipped_rows,

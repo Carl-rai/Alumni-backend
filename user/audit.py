@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import ipaddress
+from types import SimpleNamespace
 from typing import Any
 
 from django.conf import settings
@@ -184,14 +185,35 @@ class AuditLogMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
+    def _should_skip(self, request) -> bool:
+        path = request.path.rstrip("/")
+        return path == "/api/audit-logs"
+
     def __call__(self, request):
-        response = self.get_response(request)
+        try:
+            response = self.get_response(request)
+        except Exception as exc:
+            if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and request.path.startswith("/api/"):
+                if not self._should_skip(request):
+                    try:
+                        log_audit_event(
+                            request,
+                            response=SimpleNamespace(status_code=500),
+                            success=False,
+                            details={
+                                "exception": exc.__class__.__name__,
+                                "message": str(exc),
+                            },
+                        )
+                    except Exception:
+                        pass
+            raise
 
         if getattr(request, "_audit_logged", False):
             return response
 
         if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"} and request.path.startswith("/api/"):
-            if request.path not in {"/api/audit-logs/"}:
+            if not self._should_skip(request):
                 try:
                     log_audit_event(request, response=response)
                 except Exception:
